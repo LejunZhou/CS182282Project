@@ -10,7 +10,7 @@ setup(
     author='Alexandre TL',
     author_email='alexandretl3434@gmail.com',
     description='A simple and efficient Mamba implementation in pure PyTorch.',
-    long_description=open('README.md').read(),
+    long_description=open('README.md', encoding='utf-8').read(), # Fix the decoding error on Windows.
     long_description_content_type='text/markdown',
     url='https://github.com/alxndrTL/mamba.py',
     classifiers=[

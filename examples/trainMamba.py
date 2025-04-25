@@ -8,8 +8,9 @@ from time import perf_counter
 import torch
 import torch.nn.functional as F
 
-from mambapy.mamba_lm import from_pretrained
-from mambapy.mamba_lm import MambaLM, MambaLMConfig
+from mambapy.lm import from_pretrained # Fix for the import error
+from mambapy.lm import LM
+from mambapy.mamba import MambaConfig # Fix for the import error
 
 from transformers import AutoTokenizer
 import datasets
@@ -77,8 +78,8 @@ def train(pretrained=False):
     model_path - path to the saved weights; if empty it'll save there new weights during training
     backup_path - path to the backup of a model. if None - no backup is created
     '''
-    epochs = 150
-    batch_size = 64 #32 for 24GB and 130m model
+    epochs = 10
+    batch_size = 32 #32 for 24GB and 130m model
     seq_length = 128
     learning_rate = 1e-3
     model_path = f'saves/model.pth'
@@ -112,7 +113,8 @@ def train(pretrained=False):
     tokenize_data = lambda example, tokenizer: {'tokens': tokenizer.tokenize(example['text'], truncation=True)} 
     tokenized_dataset = dataset.map(tokenize_data, remove_columns=['text'], 
         fn_kwargs={'tokenizer': tokenizer})
-    
+    tokenized_dataset['train'] = tokenized_dataset['train'].select(range(2000)) # Select only 2000 samples for training
+    print(f"Number of training samples: {len(tokenized_dataset['train'])}")
     # Prepare and load tokenizer's vocabulary for later use
     vocab = tokenizer.vocab
     print(f"Vocab size: {len(vocab)}")
@@ -126,8 +128,8 @@ def train(pretrained=False):
     if pretrained:
         model = from_pretrained('state-spaces/mamba-130m').to(device)
     else:
-        config = MambaLMConfig(d_model=16, n_layers=4, vocab_size=len(tokenizer.vocab))
-        model = MambaLM(config).to(device)
+        config = MambaConfig(d_model=16, n_layers=4)
+        model = LM(config, vocab_size=len(tokenizer.vocab)).to(device)
 
     # Create optimizer and pass the model
     optim = torch.optim.AdamW(model.parameters(), lr=learning_rate)
@@ -230,7 +232,8 @@ def train(pretrained=False):
 
     print("> Generating answer: ")
     # Generate sample text after training
-    output = model.generate(tokenizer, "She was the youngest of the two daughters of a most affectionate "
+    input_ids = tokenizer("She was the youngest of the two daughters...", return_tensors="pt").input_ids.to(device)
+    output = model.generate(input_ids 
                             , num_tokens=50
                             , temperature=1.0
                             , top_k=None)
@@ -249,8 +252,8 @@ def my_gen(pretrained=False):
     if pretrained:
         model = from_pretrained('state-spaces/mamba-130m').to(device)
     else:
-        config = MambaLMConfig(d_model=16, n_layers=4, vocab_size=len(tokenizer.vocab))
-        model = MambaLM(config).to(device)
+        config = MambaConfig(d_model=16, n_layers=4)
+        model = LM(config, vocab_size=len(tokenizer.vocab)).to(device)
 
     # Load weights
     isLoaded, _, model, *_ = load_checkpoint(f'saves/model.pth', model, None, None)
@@ -258,7 +261,8 @@ def my_gen(pretrained=False):
         return
 
     # Generate text based on prompt
-    output = model.generate(tokenizer, "She was the youngest of the two daughters "
+    input_ids = tokenizer("She was the youngest of the two daughters ", return_tensors="pt").input_ids.to(device)
+    output = model.generate(input_ids
                             , num_tokens=50
                             , temperature=0.8
                             , top_k=None)
@@ -274,6 +278,6 @@ def prepare_folders():
 if __name__ == "__main__":
     seed_everything(534)
     prepare_folders()
-
+    
     train(pretrained=False)
     #my_gen(pretrained=False)
