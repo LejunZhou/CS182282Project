@@ -3,6 +3,22 @@
 clear
 clc
 %% Data Settings
+filesI = ["DATA\100% SOH\I.csv", ...
+         "DATA\95% SOH\I.csv", ...
+         "DATA\90% SOH\I.csv", ...
+         "DATA\85% SOH\I.csv", ...
+         "DATA\80% SOH\I.csv"];
+filesU = ["DATA\100% SOH\U.csv", ...
+         "DATA\95% SOH\U.csv", ...
+         "DATA\90% SOH\U.csv", ...
+         "DATA\85% SOH\U.csv", ...
+         "DATA\80% SOH\U.csv"];
+filesSOC = ["DATA\100% SOH\SOC.csv", ...
+         "DATA\95% SOH\SOC.csv", ...
+         "DATA\90% SOH\SOC.csv", ...
+         "DATA\85% SOH\SOC.csv", ...
+         "DATA\80% SOH\SOC.csv"];
+SOHtrue=[100,95,90,85,80]/100;
 Idata = readtable('DATA\100% SOH\I.csv');
 Udata = readtable('DATA\100% SOH\U.csv');
 SOCdata = readtable('DATA\100% SOH\SOC.csv');
@@ -44,79 +60,94 @@ OCVtable=update_para(SOCtable,1,SOHref,OCVref);
 % Values that are tracked
 SOH_RMS=0;
 SOC_RMS=0;
-for iii=1:repeat
-    if(mod(iii,100)==0)
-        disp(iii)
-    end
-    % initialize state
-    I = Idata{iii, :};  % Extract the i-th row as a table row
-    U = Udata{iii,:};
-    SOC_true = SOCdata{iii,:};
-    Uc=0;
-    U_c=0;
-    Irms=rms(I);
-    %% EKF algorithm
-    % set some parameters
-    % Values that are tracked
-    SOH_est=zeros(1,length(t));
-    SOC_est=zeros(1,length(t));
-    %Initialization
-    OCV0=U(1)-R1*I(1);
-    SOC0=interp1(OCVtable, SOCtable, OCV0, 'linear', 'extrap');
-    state0=[SOC0*Qmax*3600 0 Qmax*3600];%initial state: remaining capacity, Uc, maximum capacity
-    state=state0.';
-    initialCovariance=[(0.02*Qmax*3600)^2 0 0;0 1e-8 0;0 0 (0.1*Qmax*3600)^2];
-    Variance = initialCovariance;
+runtime=0;
+for jjj=1:length(filesI)
+    %% Data Settings
+    disp(append('File ',int2str(jjj)))
+    Idata = readtable(filesI(jjj));
+    Udata = readtable(filesU(jjj));
+    SOCdata = readtable(filesSOC(jjj));
+    repeat=length(Idata{:, 1});
+    I = Idata{1, :};  % Extract the i-th row as a table row
+    U = Udata{1,:};
+    SOC_true = SOCdata{1,:};
+    t=0:1:length(I)-1;
+    SOH_true=SOHtrue(jjj);
+    for iii=1:repeat
+        if(mod(iii,100)==0)
+            disp(iii)
+        end
+        % initialize state
+        I = Idata{iii, :};  % Extract the i-th row as a table row
+        U = Udata{iii,:};
+        SOC_true = SOCdata{iii,:};
+        Uc=0;
+        U_c=0;
+        Irms=rms(I);
+        %% EKF algorithm
+        % set some parameters
+        % Values that are tracked
+        SOH_est=zeros(1,length(t));
+        SOC_est=zeros(1,length(t));
+        %Initialization
+        OCV0=U(1)-R1*I(1);
+        SOC0=interp1(OCVtable, SOCtable, OCV0, 'linear', 'extrap');
+        state0=[SOC0*Qmax*3600 0 Qmax*3600];%initial state: remaining capacity, Uc, maximum capacity
+        state=state0.';
+        initialCovariance=[(0.02*Qmax*3600)^2 0 0;0 1e-8 0;0 0 (0.1*Qmax*3600)^2];
+        Variance = initialCovariance;
 
-    %SOH & SOC estimation
-    tic;
-    for j=1:length(I)
-        %EKF
-        %predict
-        processnoise=[dt^2*sigma_I^2 0 0; 0 (Irms*R2*0.05)^2 0; 0 0 1e-4];
-        measurenoise=(sigma_V+sigma_OCV)^2;
-        state=stateModel(state,dt,I(j),R2,R2C_reciporal);
-        F=get_F(dt,R2C_reciporal);
-        Variance=F*Variance*F.'+processnoise;
-        %H matrix
-        dOCVdSOH=0;
-        dOCVdSOC = get_dOCVdSOC_from_fitting(state(1)/state(3),OCVref(end,:));
-        H=[dOCVdSOC/state(3) 0 dOCVdSOH/(Qmax*3600)-dOCVdSOC*state(1)/state(3)/state(3)];
-        %kalman gain
-        K=Variance*H.'/(H*Variance*H.'+measurenoise);
-        %update
-        m_exp=get_OCV_from_fitting(state(1)/state(3),OCVref(end,:))+state(2)+R1*I(j);
-        state0=state;
-        state=state+K*(U(j)-m_exp);
-        %H matrix update
-        Variance=([1,0,0;0,1,0;0,0,1]-K*H)*Variance;  
-        %correction
-        if(state(3)<0.8*Qmax*3600)
-            ds=0.8*Qmax*3600-state(3);
-            Variance(3,3)=Variance(3,3)+ds^2;
-            state(3)=0.8*Qmax*3600;
-        elseif(state(3)>Qmax*3600)
-            ds=state(3)-Qmax*3600;
-            Variance(3,3)=Variance(3,3)+ds^2;
-            state(3)=Qmax*3600;
+        %SOH & SOC estimation
+        tic;
+        for j=1:length(I)
+            %EKF
+            %predict
+            processnoise=[dt^2*sigma_I^2 0 0; 0 (Irms*R2*0.05)^2 0; 0 0 1e-4];
+            measurenoise=(sigma_V+sigma_OCV)^2;
+            state=stateModel(state,dt,I(j),R2,R2C_reciporal);
+            F=get_F(dt,R2C_reciporal);
+            Variance=F*Variance*F.'+processnoise;
+            %H matrix
+            dOCVdSOH=0;
+            dOCVdSOC = get_dOCVdSOC_from_fitting(state(1)/state(3),OCVref(end,:));
+            H=[dOCVdSOC/state(3) 0 dOCVdSOH/(Qmax*3600)-dOCVdSOC*state(1)/state(3)/state(3)];
+            %kalman gain
+            K=Variance*H.'/(H*Variance*H.'+measurenoise);
+            %update
+            m_exp=get_OCV_from_fitting(state(1)/state(3),OCVref(end,:))+state(2)+R1*I(j);
+            state0=state;
+            state=state+K*(U(j)-m_exp);
+            %H matrix update
+            Variance=([1,0,0;0,1,0;0,0,1]-K*H)*Variance;
+            %correction
+            if(state(3)<0.8*Qmax*3600)
+                ds=0.8*Qmax*3600-state(3);
+                Variance(3,3)=Variance(3,3)+ds^2;
+                state(3)=0.8*Qmax*3600;
+            elseif(state(3)>Qmax*3600)
+                ds=state(3)-Qmax*3600;
+                Variance(3,3)=Variance(3,3)+ds^2;
+                state(3)=Qmax*3600;
+            end
+            if(state(1)/state(3)>1)
+                ds=state(1)-state(3);
+                Variance(1,1)=Variance(1,1)+ds^2;
+                state(1)=state(3);
+            elseif(state(1)<0)
+                ds=-state(1);
+                Variance(1,1)=Variance(1,1)+ds^2;
+                state(1)=0;
+            end
+            %record the values
+            SOC_est(j)=state(1)/state(3);
+            SOH_est(j)=state(3)/Qmax/3600;
         end
-        if(state(1)/state(3)>1)
-            ds=state(1)-state(3);
-            Variance(1,1)=Variance(1,1)+ds^2;
-            state(1)=state(3);
-        elseif(state(1)<0)
-            ds=-state(1);
-            Variance(1,1)=Variance(1,1)+ds^2;
-            state(1)=0;
-        end
-        %record the values
-        SOC_est(j)=state(1)/state(3);
-        SOH_est(j)=state(3)/Qmax/3600;
+        dtime=toc;
+        runtime=runtime+dtime/repeat/length(filesI);
+        SOH_RMS=SOH_RMS+rms(SOH_est-SOH_true)/repeat/length(filesI);
+        SOC_RMS=SOC_RMS+rms(SOC_est-SOC_true)/repeat/length(filesI);
     end
-    SOH_RMS=SOH_RMS+rms(SOH_est-SOH_true)/repeat;
-    SOC_RMS=SOC_RMS+rms(SOC_est-SOC_true)/repeat;
 end
-
 %% Plotting the results
 %SOC estimation result
 T = tiledlayout(2, 1, 'TileSpacing', 'compact');
@@ -144,18 +175,19 @@ ylim([85 105])
 exportgraphics(T, 'baseline.png', 'Resolution', 900);
 
 %% display metrics
-disp(append("SOC RMS error =",num2str(100*SOC_RMS),"%"))
-disp(append("SOH RMS error =",num2str(100*SOH_RMS),"%"))
+disp(append("Average Runtime = ",num2str(1000*runtime),"ms"))
+disp(append("SOC RMS error = ",num2str(100*SOC_RMS),"%"))
+disp(append("SOH RMS error = ",num2str(100*SOH_RMS),"%"))
 
 %% functions
 function stateNext = stateModel(state,dt,I,R2,R2C_reciporal)
-    A = [1 0 0; 0 exp(-dt*R2C_reciporal) 0; 0 0 1];
-    B = [dt; R2-R2*exp(-dt*R2C_reciporal); 0];
-    stateNext = A*state+B*I;
+A = [1 0 0; 0 exp(-dt*R2C_reciporal) 0; 0 0 1];
+B = [dt; R2-R2*exp(-dt*R2C_reciporal); 0];
+stateNext = A*state+B*I;
 end
 
 function F_matrix=get_F(dt,R2C_reciporal)
-    F_matrix=[1 0 0; 0 exp(-dt*R2C_reciporal) 0; 0 0 1];
+F_matrix=[1 0 0; 0 exp(-dt*R2C_reciporal) 0; 0 0 1];
 end
 
 function dOCVdSOC = get_dOCVdSOC_from_fitting(SOC,coeficients)
