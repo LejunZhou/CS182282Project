@@ -1,4 +1,4 @@
-# CS182_282_Project
+# CS182_282_Project: Transformer and State-Space Model Approaches for Battery State Estimation
 
 Accurate estimation of the battery State of Charge (SOC) and State of Health (SOH) is crucial for optimizing the performance, safety, and lifespan of various battery-powered systems, including electric vehicles and renewable energy storage systems. However, SOC and SOH estimation are challenging due to measurement limitations, nonlinear battery dynamics, and operational complexities. This project presents a systematic comparison of conventional equivalent circuit model (ECM)-based methods (e.g., the extended Kalman filter) and modern sequence-to-sequence neural network methods, including Recurrent Neural Networks (RNN), Transformers, and Mamba models. The study provides valuable insights for selecting and implementing various SOC and SOH estimation methods in practical applications by comparing their accuracy, inference time, and training complexity under realistic drive cycle data.
 
